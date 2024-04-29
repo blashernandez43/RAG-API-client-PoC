@@ -37,6 +37,13 @@ from customTypes.queryLLMRequest import queryLLMRequest
 from customTypes.queryLLMResponse import queryLLMResponse
 from customTypes.queryWDLLMRequest import queryWDLLMRequest
 from customTypes.queryWDLLMResponse import queryWDLLMResponse
+from customTypes.queryLLMElserRequest import queryLLMElserRequest
+
+# wx.ai
+from ibm_watson_machine_learning.foundation_models import Model
+from ibm_watson_machine_learning.foundation_models.utils.enums import ModelTypes
+from ibm_watson_machine_learning.metanames import GenTextParamsMetaNames as GenParams
+from ibm_watson_machine_learning.foundation_models.utils.enums import ModelTypes, DecodingMethods
 
 app = FastAPI()
 
@@ -530,6 +537,127 @@ def queryWDLLM(request: queryWDLLMRequest, api_key: str = Security(get_api_key))
     }
 
     return queryWDLLMResponse(**data_response)
+
+@app.post("/queryLLMElser")
+def queryLLMElser(request: queryLLMElserRequest):
+    question         = request.question
+    index_names       = request.es_index_name
+    index_text_field = request.es_index_text_field
+    es_model_name    = request.es_model_name
+    num_results      = request.num_results
+    llm_params       = request.llm_params
+    es_filters       = request.filters
+
+    # Sets the llm instruction if the user provides it
+    if not request.llm_instructions:
+        llm_instructions = os.environ.get("LLM_INSTRUCTIONS")
+    else:
+        llm_instructions = request.llm_instructions
+    
+    # Setup Elastic Client
+    es_client = Elasticsearch(
+    wxd_creds["wxdurl"],
+    basic_auth=(wxd_creds["username"], wxd_creds["password"]),
+    verify_certs=False,
+    request_timeout=3600,
+)
+    
+    # Query indexes
+    relevant_chunks = []
+    query_regular_index = es_client.search(
+        index=index_names[0],
+        query={
+        "text_expansion": {
+            "tokens": {
+                "model_id": es_model_name,
+                "model_text": question,
+                }
+            }
+        },
+        size=num_results
+    )
+    query_nested_index = es_client.search(
+            index=index_names[1],
+            query={
+                    "nested": {
+                        "path": "passages",
+                        "query": {
+                        "text_expansion": {
+                            "passages.sparse.tokens": {
+                            "model_id": es_model_name,
+                            "model_text": question
+                            }
+                        }
+                        },
+                        "inner_hits": {"_source": {"excludes": ["passages.sparse"]}}
+                    }
+                },
+            size=num_results                        
+    )
+    # Get relevant chunks and format
+    relevant_chunks = [query_regular_index, query_nested_index]
+    
+    hits_index1 = [hit for hit in relevant_chunks[0]["hits"]["hits"]]
+    hits_index2 = [hit for hit in relevant_chunks[1]["hits"]["hits"]]
+    context2_pre = []
+    for hit in hits_index2:
+        for passage in hit["_source"]["passages"]:
+            context2_pre.append(passage["text"])
+    
+    
+    context1 = "\n\n\n".join([rel_ctx["_source"]['Text'] for rel_ctx in hits_index1])
+    context2 = "\n\n\n.".join(context2_pre)
+    prompt_text = make_prompt(llm_instructions, (context1 + "\n\n" + context2), question)
+    print("\n\n\n\n", prompt_text)
+
+    # watsonx.ai model setup
+    model_id = ModelTypes.MIXTRAL_8X7B_INSTRUCT_V01_Q
+    parameters = {
+    GenParams.DECODING_METHOD: DecodingMethods.GREEDY,
+    GenParams.MIN_NEW_TOKENS: llm_params.parameters.min_new_tokens,
+    GenParams.MAX_NEW_TOKENS: llm_params.parameters.max_new_tokens
+    }
+    
+    model = Model(
+    model_id=model_id,
+    params=parameters,
+    credentials=wml_credentials,
+    project_id=project_id
+    )
+    
+    # LLM answer generation
+    model_res = model.generate_text(prompt_text)
+    
+    # LLM references formatting
+    references_context1 = [chunks["_source"] for chunks in relevant_chunks[0]["hits"]["hits"]]
+    references_context2 = [chunks["_source"] for chunks in relevant_chunks[1]["hits"]["hits"]]
+    
+    for ref in references_context1:
+        if "tokens" in ref:
+            del ref["tokens"]
+        del ref["metadata"]["_node_content"]
+    for ref in references_context2:
+        for passages in ref["passages"]:
+            if "sparse" in passages:
+                del passages["sparse"]
+    references = [*references_context1, *references_context2]
+    
+    res = {
+        "llm_response": model_res,
+        "references": references
+        
+    }
+    
+    return res
+
+
+def make_prompt(llm_instructions, context, question_text):
+        return(f"{llm_instructions}\n"
+          + f"Relevant Documents:\n"
+          + f"{context}:\n\n"
+          + f"Based on the documents above, answer this question:\n"
+          + f"{question_text}\n\n[/INST]")
+ 
 
 def get_custom_prompt(llm_instructions, wd_contexts, query_str):#
     context_str = "\n".join(wd_contexts)
