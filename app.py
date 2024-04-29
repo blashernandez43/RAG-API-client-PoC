@@ -611,7 +611,7 @@ def queryLLMElser(request: queryLLMElserRequest):
     print("\n\n\n\n", prompt_text)
 
     # watsonx.ai model setup
-    model_id = ModelTypes.MIXTRAL_8X7B_INSTRUCT_V01_Q
+    model_id = 'mistralai/mixtral-8x7b-instruct-v01'
     parameters = {
     GenParams.DECODING_METHOD: DecodingMethods.GREEDY,
     GenParams.MIN_NEW_TOKENS: llm_params.parameters.min_new_tokens,
