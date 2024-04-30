@@ -1,18 +1,14 @@
-# Create your own APIKey/Secret for the app
-RAG_APP_API_KEY="<MAKE_YOUR_OWN_KEY>"
+# Application specific variables
+RAG_APP_API_KEY="<MAKE_YOUR_OWN_KEY>"   # custom key/password you create as a key to pass along to the header for the RAG app (for basic security).
 
-IBM_CLOUD_API_KEY=""
+# IBM Cloud variables
+IBM_CLOUD_API_KEY="" # See https://cloud.ibm.com/docs/account?topic=account-userapikey&interface=ui#create_user_key
+
+# watsonx.ai variables
 WX_URL="https://us-south.ml.cloud.ibm.com"
-WX_PROJECT_ID=""
+WX_PROJECT_ID=""     # To find project id, go to https://dataplatform.cloud.ibm.com/docs/content/wsj/analyze-data/fm-project-id.html?context=wx
 
-COS_IBM_CLOUD_API_KEY=""
-COS_ENDPOINT_URL=""
-COS_INSTANCE_ID=""
-COS_ENDPOINT_URL=""
-
+# Watsonx Discovery (Elasticsearch) variables
 WXD_USERNAME=""
 WXD_PASSWORD=""
-WXD_URL=""
-
-WD_API_KEY=""
-WD_URL=""
+WXD_URL="https://<host>:<port>"
