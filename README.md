@@ -111,14 +111,14 @@ After deploying the application, you can now test the API:
 
 ### Postman
 
-1. Open a new tab and from the request type dropdown, select POST. In the url, paste your url (in this example, it's localhost): `http://127.0.0.1:4050/queryLLM`
+1. Open a new tab and from the request type dropdown, select POST. In the url, paste your url (in this example, it's localhost): `http://127.0.0.1:4050/queryWXDLLM`
 
 2. Under Headers, add the following key/value: `RAG-APP-API-Key`/`<RAG_APP_API_KEY_FROM_.ENV>`
 
 3. Under Body, select `raw` and paste the following json:
 ```
 {
-  "question": "What is 2+2?",
+  "question": "<your question>",
 }
 ```
 4. Hit the blue `SEND` button and wait for your result.
