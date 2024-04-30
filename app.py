@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 # Fast API
 from fastapi import FastAPI, Security, HTTPException
 from fastapi.security.api_key import APIKeyHeader
-from starlette.status import HTTP_403_FORBIDDEN
+from starlette.status import HTTP_403_FORBIDDEN, HTTP_500_INTERNAL_SERVER_ERROR
 from fastapi.middleware.cors import CORSMiddleware
 
 # ElasticSearch
@@ -100,6 +100,21 @@ async_es_client = AsyncElasticsearch(
     request_timeout=3600,
 )
 
+# watsonx.ai model setup
+model_id = 'mistralai/mixtral-8x7b-instruct-v01'
+parameters = {
+GenParams.DECODING_METHOD: DecodingMethods.GREEDY,
+GenParams.MIN_NEW_TOKENS: 1,
+GenParams.MAX_NEW_TOKENS: 500,
+}
+    
+model = Model(
+model_id=model_id,
+params=parameters,
+credentials=wml_credentials,
+project_id=project_id
+)
+
 # Create a watsonx client cache for faster calls.
 custom_watsonx_cache = {}
 
@@ -114,7 +129,7 @@ async def get_api_key(api_key_header: str = Security(api_key_header)):
 
 @app.get("/")
 def index():
-    return {"Hello": "World"}
+    return {"Hello": "World V2"}
 
 @app.post("/ingestDocs")
 async def ingestDocs(request: ingestRequest, api_key: str = Security(get_api_key))->ingestResponse:
@@ -539,14 +554,12 @@ def queryWDLLM(request: queryWDLLMRequest, api_key: str = Security(get_api_key))
     return queryWDLLMResponse(**data_response)
 
 @app.post("/queryLLMElser")
-def queryLLMElser(request: queryLLMElserRequest):
+async def queryLLMElser(request: queryLLMElserRequest):
     question         = request.question
     index_names       = request.es_index_name
-    index_text_field = request.es_index_text_field
     es_model_name    = request.es_model_name
     num_results      = request.num_results
     llm_params       = request.llm_params
-    es_filters       = request.filters
 
     # Sets the llm instruction if the user provides it
     if not request.llm_instructions:
@@ -554,46 +567,42 @@ def queryLLMElser(request: queryLLMElserRequest):
     else:
         llm_instructions = request.llm_instructions
     
-    # Setup Elastic Client
-    es_client = Elasticsearch(
-    wxd_creds["wxdurl"],
-    basic_auth=(wxd_creds["username"], wxd_creds["password"]),
-    verify_certs=False,
-    request_timeout=3600,
-)
-    
     # Query indexes
-    relevant_chunks = []
-    query_regular_index = es_client.search(
-        index=index_names[0],
-        query={
-        "text_expansion": {
-            "tokens": {
-                "model_id": es_model_name,
-                "model_text": question,
-                }
-            }
-        },
-        size=num_results
-    )
-    query_nested_index = es_client.search(
-            index=index_names[1],
+    try:
+        relevant_chunks = []
+        query_regular_index = await async_es_client.search(
+            index=index_names[0],
             query={
-                    "nested": {
-                        "path": "passages",
-                        "query": {
-                        "text_expansion": {
-                            "passages.sparse.tokens": {
-                            "model_id": es_model_name,
-                            "model_text": question
-                            }
-                        }
-                        },
-                        "inner_hits": {"_source": {"excludes": ["passages.sparse"]}}
+            "text_expansion": {
+                "tokens": {
+                    "model_id": es_model_name,
+                    "model_text": question,
                     }
-                },
-            size=num_results                        
-    )
+                }
+            },
+            size=num_results,
+            min_score=0.1
+        )
+        query_nested_index = await async_es_client.search(
+                index=index_names[1],
+                query={
+                        "nested": {
+                            "path": "passages",
+                            "query": {
+                            "text_expansion": {
+                                "passages.sparse.tokens": {
+                                "model_id": es_model_name,
+                                "model_text": question
+                                }
+                            }
+                            },
+                            "inner_hits": {"_source": {"excludes": ["passages.sparse"]}}
+                        }
+                    },
+                size=num_results                        
+        )
+    except Exception as e:
+        return {"msg": "Error searching indexes", "error": e}
     # Get relevant chunks and format
     relevant_chunks = [query_regular_index, query_nested_index]
     
@@ -609,28 +618,26 @@ def queryLLMElser(request: queryLLMElserRequest):
     context2 = "\n\n\n.".join(context2_pre)
     prompt_text = make_prompt(llm_instructions, (context1 + "\n\n" + context2), question)
     print("\n\n\n\n", prompt_text)
-
-    # watsonx.ai model setup
-    model_id = 'mistralai/mixtral-8x7b-instruct-v01'
-    parameters = {
-    GenParams.DECODING_METHOD: DecodingMethods.GREEDY,
-    GenParams.MIN_NEW_TOKENS: llm_params.parameters.min_new_tokens,
-    GenParams.MAX_NEW_TOKENS: llm_params.parameters.max_new_tokens
-    }
-    
-    model = Model(
-    model_id=model_id,
-    params=parameters,
-    credentials=wml_credentials,
-    project_id=project_id
-    )
     
     # LLM answer generation
     model_res = model.generate_text(prompt_text)
     
     # LLM references formatting
+    
+    uniform_format = {
+        "url": None,
+    }
+    
     references_context1 = [chunks["_source"] for chunks in relevant_chunks[0]["hits"]["hits"]]
     references_context2 = [chunks["_source"] for chunks in relevant_chunks[1]["hits"]["hits"]]
+    
+    references = []
+    
+    for ref in references_context1:
+        uniform_ref = {}
+        for key in uniform_format:
+            if key in ref:
+                uniform_ref[key] = ref[key]
     
     for ref in references_context1:
         if "tokens" in ref:
