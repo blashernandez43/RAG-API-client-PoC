@@ -84,7 +84,7 @@ After deploying the application, you can now test the API:
       "question": "<your question>",
       "num_results": "5",        # how many results from each index should be returned
       "llm_params": {
-        "model_id": "",
+        "model_id": "mistralai/mixtral-8x7b-instruct-v01",
         "inputs": [],
         "parameters": {
           "decoding_method": "greedy",
