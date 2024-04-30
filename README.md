@@ -30,10 +30,6 @@ To install this project locally, follow these steps:
 
     Copy `env` to `.env` and fill in the variables with your url, passwords, and apikeys.
 
-    *Note*: `COS_IBM_CLOUD_API_KEY` and `IBM_CLOUD_API_KEY` are not the same key.
-    - To create an IBM Cloud API Key, go to [Create a User Key](https://cloud.ibm.com/docs/account?topic=account-userapikey&interface=ui#create_user_key)
-    - To retrieve Cloud Object Storage API key, go to your COS instance service credentials.  See [Cloud Object Storage Service Credentials](https://cloud.ibm.com/docs/cloud-object-storage?topic=cloud-object-storage-service-credentials)
-
 6. **Start the project:**
 
     ```bash
