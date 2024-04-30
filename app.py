@@ -20,7 +20,7 @@ from ibm_watson_machine_learning.metanames import GenTextParamsMetaNames as GenP
 
 
 # Custom type classes
-from customTypes.queryLLMResponse import queryLLMResponse
+from customTypes.queryLLMElserResponse import queryLLMElserResponse
 from customTypes.queryLLMElserRequest import queryLLMElserRequest
 
 
@@ -93,7 +93,7 @@ def index(api_key: str = Security(get_api_key)):
 
 
 @app.post("/queryWXDLLM")
-async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get_api_key)):
+async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get_api_key))->queryLLMElserResponse:
     question         = request.question
     num_results      = request.num_results
     llm_params       = request.llm_params
@@ -114,9 +114,10 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
     if "{query_str}" not in llm_instructions or "{context_str}" not in llm_instructions:
         data_response = {
             "llm_response": "",
-            "references": [{"url": "", "title": "",  "error":"Please add {query_str} and {context_str} placeholders to the instructions."}]
+            "references": [],
+            "error": "LLM instructions must contain {query_str} and {context_str}"
         }
-        return queryLLMResponse(**data_response)
+        return queryLLMElserResponse(**data_response)
     
     # Query indexes
     try:
@@ -208,7 +209,7 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
         
     }
     
-    return res
+    return queryLLMElserResponse(**res)
  
 
 @app.post("/testConfidence")
