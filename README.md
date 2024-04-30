@@ -124,7 +124,7 @@ curl --location '<application url>/queryWXDLLM' \
 
 1. Open a new tab and from the request type dropdown, select POST. In the url, paste your url (in this example, it's localhost): `http://127.0.0.1:4050/queryWXDLLM`
 
-2. Under Authorization, choose type **API Key**, add the following key/value: `RAG-APP-API-Key`/`<RAG_APP_API_KEY_FROM_.ENV>`
+2. Under Authorization, choose type **API Key**, add the following key/value: `RAG-APP-API-Key`/`<value for RAG_APP_API_KEY from .env>`
 
 3. Under Body, select `raw` and paste the following json:
 ```
