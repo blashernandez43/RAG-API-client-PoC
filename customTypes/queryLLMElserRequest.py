@@ -33,16 +33,7 @@ class LLMParams(BaseModel):
         protected_namespaces = ()
 
 class queryLLMElserRequest(BaseModel):
-    llm_instructions: Optional[str] = Field(None, title="LLM Instructions", description="Instructions for LLM")
     question: str
-    es_index_name: list[str]
-    es_index_text_field: Optional[str] = Field(default="body_content_field")
-    es_model_name: Optional[str] = Field(default=".elser_model_1")
     num_results: Optional[str] = Field(default="5")
     llm_params: Optional[LLMParams] = LLMParams()
-    filters: Optional[Dict[str, Any]] = Field(None,
-        example={
-            "date": "2022-01-01",
-            "file_name": "test.pdf"
-        })
 

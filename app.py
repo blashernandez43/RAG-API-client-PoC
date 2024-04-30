@@ -556,16 +556,17 @@ def queryWDLLM(request: queryWDLLMRequest, api_key: str = Security(get_api_key))
 @app.post("/queryLLMElser")
 async def queryLLMElser(request: queryLLMElserRequest):
     question         = request.question
-    index_names       = request.es_index_name
-    es_model_name    = request.es_model_name
     num_results      = request.num_results
     llm_params       = request.llm_params
+    index_names       = [
+    "juniper-knowledgebase-api-v2",
+    "search-juniper-documentation-chunked"
+  ]
+    es_model_name    = ".elser_model_2_linux-x86_64"
+
 
     # Sets the llm instruction if the user provides it
-    if not request.llm_instructions:
-        llm_instructions = os.environ.get("LLM_INSTRUCTIONS")
-    else:
-        llm_instructions = request.llm_instructions
+    llm_instructions = "[INST]<<SYS>>You are a helpful, respectful, and honest assistant. Always answer as helpfully as possible, while being safe. Be brief in your answers. Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.\nIf a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don\\'\''t know the answer to a question, please do not share false information. <</SYS>>\nGenerate the next agent response by answering the question. You are provided several documents with titles. If the answer comes from different documents please mention all possibilities and use the tiles of documents to separate between topics or domains. Answer with no more than 150 words. If you cannot base your answer on the given document, please state that you do not have an answer.\n{context_str}<</SYS>>\n\n{query_str} Answer with no more than 150 words. If you cannot base your answer on the given document, please state that you do not have an answer. [/INST]"
     
     # Query indexes
     try:
@@ -608,15 +609,15 @@ async def queryLLMElser(request: queryLLMElserRequest):
     
     hits_index1 = [hit for hit in relevant_chunks[0]["hits"]["hits"]]
     hits_index2 = [hit for hit in relevant_chunks[1]["hits"]["hits"]]
-    context2_pre = []
+    context2_preprocess = []
     for hit in hits_index2:
         for passage in hit["_source"]["passages"]:
-            context2_pre.append(passage["text"])
+            context2_preprocess.append(passage["text"])
     
     
     context1 = "\n\n\n".join([rel_ctx["_source"]['Text'] for rel_ctx in hits_index1])
-    context2 = "\n\n\n.".join(context2_pre)
-    prompt_text = make_prompt(llm_instructions, (context1 + "\n\n" + context2), question)
+    context2 = "\n\n\n.".join(context2_preprocess)
+    prompt_text = get_custom_prompt(llm_instructions, [context1, context2], question)
     print("\n\n\n\n", prompt_text)
     
     # LLM answer generation
@@ -625,7 +626,9 @@ async def queryLLMElser(request: queryLLMElserRequest):
     # LLM references formatting
     
     uniform_format = {
-        "url": None,
+        "url": ["url"],
+        "title": ["title"],
+        "text": ["Text", "text"]
     }
     
     references_context1 = [chunks["_source"] for chunks in relevant_chunks[0]["hits"]["hits"]]
@@ -633,11 +636,10 @@ async def queryLLMElser(request: queryLLMElserRequest):
     
     references = []
     
-    for ref in references_context1:
-        uniform_ref = {}
-        for key in uniform_format:
-            if key in ref:
-                uniform_ref[key] = ref[key]
+    #for ref in references_context1:
+    #    uniform_ref = {}
+    
+        
     
     for ref in references_context1:
         if "tokens" in ref:
@@ -656,14 +658,6 @@ async def queryLLMElser(request: queryLLMElserRequest):
     }
     
     return res
-
-
-def make_prompt(llm_instructions, context, question_text):
-        return(f"{llm_instructions}\n"
-          + f"Relevant Documents:\n"
-          + f"{context}:\n\n"
-          + f"Based on the documents above, answer this question:\n"
-          + f"{question_text}\n\n[/INST]")
  
 
 def get_custom_prompt(llm_instructions, wd_contexts, query_str):#
