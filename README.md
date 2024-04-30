@@ -48,10 +48,11 @@ We have created Terraform scripts to help deploy this on **IBM Cloud Code Engine
 
 1. Clone the repo: `git clone https://github.com/ibm-build-lab/rag-codeengine-terraform-setup/tree/updatedTF`
 2. Change into the cloned directory `cd rag-codeengine-terraform-setup`
-3. Edit the `terraform.tfvars` file and fill in all the required values
-4. Run `terraform init` to initialize your terraform environment
-5. Run `terraform plan` to see what resources will be created
-6. Run `terraform apply` to create the resources
+3. Edit the `terraform.tfvars` file and fill in all the required values. Note for this api, the COS and WD variables are unnecessary and can be left as default.
+4. Update the `variables.tf` file to change the value of `source_url` to point to `https://github.com/blashernandez43/RAG-API-client-PoC`
+5. Run `terraform init` to initialize your terraform environment
+6. Run `terraform plan` to see what resources will be created
+7. Run `terraform apply` to create the resources
 
 Verify that this has created a **Code Engine** project and application. 
 
