@@ -20,7 +20,7 @@ from ibm_watson_machine_learning.metanames import GenTextParamsMetaNames as GenP
 
 
 # Custom type classes
-from customTypes.queryLLMElserResponse import queryLLMElserResponse
+from customTypes.queryLLMResponse import queryLLMResponse
 from customTypes.queryLLMElserRequest import queryLLMElserRequest
 
 
@@ -93,38 +93,30 @@ def index(api_key: str = Security(get_api_key)):
 
 
 @app.post("/queryWXDLLM")
-async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get_api_key))->queryLLMElserResponse:
+async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get_api_key)):
     question         = request.question
     num_results      = request.num_results
-    #llm_params       = request.llm_params
+    llm_params       = request.llm_params
     index_names       = [
     "juniper-knowledgebase-api-v2",
     "search-juniper-documentation-chunked"
   ]
-    #llm_instructions = request.llm_instructions
+    llm_instructions = request.llm_instructions
     es_model_name    = ".elser_model_2_linux-x86_64"
     min_confidence = 10
 
 
-    # Sets the llm params if the user provides it
-    #if not llm_params:
-    llm_params = dict(
-      parameters="""{"decoding_method": "greedy","max_new_tokens": 500,"min_new_tokens": 0,"stop_sequences": [],"repetition_penalty": 1}""",
-      model_id="mistralai/mixtral-8x7b-instruct-v01"
-    )
-
     # Sets the llm instruction if the user provides it
-    #if not llm_instructions:
-    llm_instructions = "[INST]<<SYS>>You are a helpful, respectful, and honest assistant. Always answer as helpfully as possible, while being safe. Be brief in your answers. Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.\nIf a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don\\'\''t know the answer to a question, please do not share false information. <</SYS>>\nGenerate the next agent response by answering the question. You are provided several documents with titles. If the answer comes from different documents please mention all possibilities and use the tiles of documents to separate between topics or domains. Answer with no more than 150 words. If you cannot base your answer on the given document, please state that you do not have an answer.\n{context_str}<</SYS>>\n\n{query_str}. Answer with no more than 150 words. If you cannot base your answer on the given document, please state that you do not have an answer. [/INST]"
+    if not llm_instructions:
+        llm_instructions = "[INST]<<SYS>>You are a helpful, respectful, and honest assistant. Always answer as helpfully as possible, while being safe. Be brief in your answers. Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.\nIf a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don\\'\''t know the answer to a question, please do not share false information. <</SYS>>\nGenerate the next agent response by answering the question. You are provided several documents with titles. If the answer comes from different documents please mention all possibilities and use the tiles of documents to separate between topics or domains. Answer with no more than 150 words. If you cannot base your answer on the given document, please state that you do not have an answer.\n{context_str}<</SYS>>\n\n{query_str}. Answer with no more than 150 words. If you cannot base your answer on the given document, please state that you do not have an answer. [/INST]"
     
     # Sanity check for instructions
     if "{query_str}" not in llm_instructions or "{context_str}" not in llm_instructions:
         data_response = {
             "llm_response": "",
-            "references": [],
-            "error": "LLM instructions must contain {query_str} and {context_str}"
+            "references": [{"url": "", "title": "",  "error":"Please add {query_str} and {context_str} placeholders to the instructions."}]
         }
-        return queryLLMElserResponse(**data_response)
+        return queryLLMResponse(**data_response)
     
     # Query indexes
     try:
@@ -181,9 +173,7 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
     print("\n\n\n\n", prompt_text)
     
     
-    #model = get_custom_watsonx(llm_params.model_id, llm_params.parameters.dict())
-    model = get_custom_watsonx("mistralai/mixtral-8x7b-instruct-v01", dict(decoding_method="greedy",max_new_tokens=500, min_new_tokens=0, stop_sequences=[], repetition_penalty=1))
-    
+    model = get_custom_watsonx(llm_params.model_id, llm_params.parameters.dict())
     # LLM answer generation
     model_res = model.generate_text(prompt_text)
     
@@ -218,7 +208,7 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
         
     }
     
-    return queryLLMElserResponse(**res)
+    return res
  
 
 @app.post("/testConfidence")
