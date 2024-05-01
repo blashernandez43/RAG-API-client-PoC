@@ -181,7 +181,9 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
     print("\n\n\n\n", prompt_text)
     
     
-    model = get_custom_watsonx(llm_params.model_id, llm_params.parameters.dict())
+    #model = get_custom_watsonx(llm_params.model_id, llm_params.parameters.dict())
+    model = get_custom_watsonx("mistralai/mixtral-8x7b-instruct-v01", dict(decoding_method="greedy",max_new_tokens=500, min_new_tokens=0, stop_sequences=[], repetition_penalty=1))
+    
     # LLM answer generation
     model_res = model.generate_text(prompt_text)
     
