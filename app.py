@@ -109,13 +109,7 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
     # Sets the llm params if the user provides it
     #if not llm_params:
     llm_params = {
-      "parameters": {
-        "decoding_method": "greedy",
-        "max_new_tokens": 500,
-        "min_new_tokens": 0,
-        "stop_sequences": [],
-        "repetition_penalty": 1
-      },
+      "parameters": """{"decoding_method": "greedy","max_new_tokens": 500,"min_new_tokens": 0,"stop_sequences": [],"repetition_penalty": 1}""",
       "model_id": "mistralai/mixtral-8x7b-instruct-v01", 
     }
 
