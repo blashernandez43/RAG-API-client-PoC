@@ -96,15 +96,28 @@ def index(api_key: str = Security(get_api_key)):
 async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get_api_key))->queryLLMElserResponse:
     question         = request.question
     num_results      = request.num_results
-    llm_params       = request.llm_params
+    #llm_params       = request.llm_params
     index_names       = [
     "juniper-knowledgebase-api-v2",
     "search-juniper-documentation-chunked"
   ]
-    llm_instructions = request.llm_instructions
+    #llm_instructions = request.llm_instructions
     es_model_name    = ".elser_model_2_linux-x86_64"
     min_confidence = 10
 
+
+    # Sets the llm params if the user provides it
+    if not llm_params
+        llm_params = {
+          "parameters": {
+              "decoding_method": "greedy",
+              "max_new_tokens": 500,
+              "min_new_tokens": 0,
+              "stop_sequences": [],
+              "repetition_penalty": 1
+            },
+        "model_id": "mistralai/mixtral-8x7b-instruct-v01", 
+    }
 
     # Sets the llm instruction if the user provides it
     if not llm_instructions:
