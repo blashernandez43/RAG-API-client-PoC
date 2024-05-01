@@ -107,7 +107,7 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
 
 
     # Sets the llm params if the user provides it
-    if not llm_params
+    if not llm_params:
         llm_params = {
           "parameters": {
               "decoding_method": "greedy",
