@@ -21,7 +21,8 @@ from ibm_watson_machine_learning.metanames import GenTextParamsMetaNames as GenP
 
 # Custom type classes
 from customTypes.queryLLMElserResponse import queryLLMElserResponse
-from customTypes.queryLLMElserRequest import queryLLMElserRequest
+from customTypes.queryLLMElserRequest import queryLLMElserRequest, LLMParams
+
 
 
 # wx.ai
@@ -75,8 +76,25 @@ async_es_client = AsyncElasticsearch(
     request_timeout=3600,
 )
 
-# Create a watsonx client cache for faster calls.
-custom_watsonx_cache = {}
+
+model_id = os.environ.get("LLM_MODEL_ID")
+decoding_method = os.environ.get("DECODING_METHOD")
+max_tokens = int(os.environ.get("MAX_TOKENS"))
+min_tokens = int(os.environ.get("MIN_TOKENS"))
+
+
+llm_params = LLMParams(model_id=model_id, parameters={"decoding_method": decoding_method, "max_new_tokens": max_tokens, "min_new_tokens": min_tokens})
+
+llm_instructions = os.environ.get("LLM_INSTRUCTIONS")
+
+model = Model(
+model_id=model_id,
+params=llm_params.parameters.dict(),
+credentials=wml_credentials,
+project_id=project_id
+)
+
+
 
 # Basic security for accessing the App
 async def get_api_key(api_key_header: str = Security(api_key_header)):
@@ -96,26 +114,13 @@ def index(api_key: str = Security(get_api_key)):
 async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get_api_key))->queryLLMElserResponse:
     question         = request.question
     num_results      = request.num_results
-    #llm_params       = request.llm_params
+    
     index_names       = [
     "juniper-knowledgebase-api-v2",
     "search-juniper-documentation-chunked"
   ]
-    #llm_instructions = request.llm_instructions
     es_model_name    = ".elser_model_2_linux-x86_64"
     min_confidence = 10
-
-
-    # Sets the llm params if the user provides it
-    #if not llm_params:
-    llm_params = dict(
-      parameters="""{"decoding_method": "greedy","max_new_tokens": 500,"min_new_tokens": 0,"stop_sequences": [],"repetition_penalty": 1}""",
-      model_id="mistralai/mixtral-8x7b-instruct-v01"
-    )
-
-    # Sets the llm instruction if the user provides it
-    #if not llm_instructions:
-    llm_instructions = "[INST]<<SYS>>You are a helpful, respectful, and honest assistant. Always answer as helpfully as possible, while being safe. Be brief in your answers. Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.\nIf a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don\\'\''t know the answer to a question, please do not share false information. <</SYS>>\nGenerate the next agent response by answering the question. You are provided several documents with titles. If the answer comes from different documents please mention all possibilities and use the tiles of documents to separate between topics or domains. Answer with no more than 150 words. If you cannot base your answer on the given document, please state that you do not have an answer.\n{context_str}<</SYS>>\n\n{query_str}. Answer with no more than 150 words. If you cannot base your answer on the given document, please state that you do not have an answer. [/INST]"
     
     # Sanity check for instructions
     if "{query_str}" not in llm_instructions or "{context_str}" not in llm_instructions:
@@ -178,13 +183,10 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
     context1 = "\n\n\n".join([rel_ctx["_source"]['Text'] for rel_ctx in hits_index1])
     context2 = "\n\n\n.".join(context2_preprocess)
     prompt_text = get_custom_prompt(llm_instructions, [context1, context2], question)
-    print("\n\n\n\n", prompt_text)
-    
-    
-    #model = get_custom_watsonx(llm_params.model_id, llm_params.parameters.dict())
-    model = get_custom_watsonx("mistralai/mixtral-8x7b-instruct-v01", dict(decoding_method="greedy",max_new_tokens=500, min_new_tokens=0, stop_sequences=[], repetition_penalty=1))
+    print("\n\n\n\n", prompt_text)    
     
     # LLM answer generation
+    print(model.params.items())
     model_res = model.generate_text(prompt_text)
     
     # LLM references formatting
@@ -219,75 +221,7 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
     }
     
     return queryLLMElserResponse(**res)
- 
 
-@app.post("/testConfidence")
-async def testConfidence(index: int, question: str, num_results: int, min_score: float):
-    index_names       = [
-    "juniper-knowledgebase-api-v2",
-    "search-juniper-documentation-chunked"
-  ]
-    es_model_name    = ".elser_model_2_linux-x86_64"
-    
-    query_regular_index = await async_es_client.search(
-            index=index_names[0],
-            query={
-            "text_expansion": {
-                "tokens": {
-                    "model_id": es_model_name,
-                    "model_text": question,
-                    }
-                }
-            },
-            size=num_results,
-            min_score=min_score
-        )
-    
-    query_nested_index = await async_es_client.search(
-                index=index_names[1],
-                query={
-                        "nested": {
-                            "path": "passages",
-                            "query": {
-                            "text_expansion": {
-                                "passages.sparse.tokens": {
-                                "model_id": es_model_name,
-                                "model_text": question
-                                }
-                            }
-                            },
-                            "inner_hits": {"_source": {"excludes": ["passages.sparse"]}}
-                        }
-                    },
-                size=num_results,
-                min_score=min_score                       
-        )
-    queries = [query_regular_index["hits"]["hits"], query_nested_index["hits"]["hits"]]
-    
-    return queries[index]
-
-
-def get_custom_watsonx(model_id, additional_kwargs):
-    # Serialize additional_kwargs to a JSON string, with sorted keys
-    additional_kwargs_str = json.dumps(additional_kwargs, sort_keys=True)
-    # Generate a hash of the serialized string
-    additional_kwargs_hash = hash(additional_kwargs_str)
-    
-    cache_key = f"{model_id}_{additional_kwargs_hash}"
-
-    # Check if the object already exists in the cache
-    if cache_key in custom_watsonx_cache:
-        print("I had model in memory")
-        return custom_watsonx_cache[cache_key]
-        
-    model = Model(
-    model_id=model_id,
-    params=additional_kwargs,
-    credentials=wml_credentials,
-    project_id=project_id
-    )
-    custom_watsonx_cache[cache_key] = model
-    return model
 
 def get_custom_prompt(llm_instructions, wd_contexts, query_str):#
     context_str = "\n".join(wd_contexts)
