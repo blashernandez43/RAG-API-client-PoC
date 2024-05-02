@@ -1,4 +1,3 @@
-import json
 import os
 import uvicorn
 import sys
@@ -81,6 +80,7 @@ model_id = os.environ.get("LLM_MODEL_ID")
 decoding_method = os.environ.get("DECODING_METHOD")
 max_tokens = int(os.environ.get("MAX_TOKENS"))
 min_tokens = int(os.environ.get("MIN_TOKENS"))
+
 
 
 llm_params = LLMParams(model_id=model_id, parameters={"decoding_method": decoding_method, "max_new_tokens": max_tokens, "min_new_tokens": min_tokens})
