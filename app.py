@@ -89,7 +89,7 @@ async def get_api_key(api_key_header: str = Security(api_key_header)):
 
 @app.get("/")
 def index(api_key: str = Security(get_api_key)):
-    return {"Hello": "World"}
+    return {"Hello": "World internal version"}
 
 
 @app.post("/queryWXDLLM")
