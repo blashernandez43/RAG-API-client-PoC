@@ -172,7 +172,7 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
     # Get relevant chunks and format
     relevant_chunks = [query_regular_index, query_nested_index]
     
-    hits_index1 = [hit for hit in relevant_chunks[0]["hits"]["hits"]]
+    hits_index1 = [hit for hit in relevant_chunks[0]["hits"]["hits"]] #support portal
     hits_index2 = [hit for hit in relevant_chunks[1]["hits"]["hits"]]
     context2_preprocess = []
     for hit in hits_index2:
@@ -182,7 +182,8 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
     
     context1 = "\n\n\n".join([rel_ctx["_source"]['Text'] for rel_ctx in hits_index1])
     context2 = "\n\n\n.".join(context2_preprocess)
-    prompt_text = get_custom_prompt(llm_instructions, [context1, context2], question)
+    #prompt_text = get_custom_prompt(llm_instructions, [context1, context2], question) #Removing support portal links for now
+    prompt_text = get_custom_prompt(llm_instructions, [context2], question)
     print("\n\n\n\n", prompt_text)    
     
     # LLM answer generation
