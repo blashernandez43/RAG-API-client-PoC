@@ -181,7 +181,7 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
     
     
     #context1 = "\n\n\n".join([rel_ctx["_source"]['Text'] for rel_ctx in hits_index1])
-    context1 = "" #removing support portal query
+    context1 = "\n" #removing support portal query
     context2 = "\n\n\n.".join(context2_preprocess)
     prompt_text = get_custom_prompt(llm_instructions, [context1, context2], question)
     print("\n\n\n\n", prompt_text)    
@@ -206,7 +206,7 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
     
     for (ref, score) in references_context1:
         ref["score"] = score
-        references.append(convert_to_uniform_format(ref, uniform_format))
+        #references.append(convert_to_uniform_format(ref, uniform_format)) Hiding support portal references
     
     for (ref, score) in references_context2:
         for passage in ref["passages"]:
