@@ -145,13 +145,13 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
                             },
                             "inner_hits": {"_source": {"excludes": ["passages.sparse"]}}
                         },
-                        "boosting": {
-                            "positive": {
-                                "term": {
-                                    "text": question
-                                }
-                            },
-                        },
+                        # "boosting": {
+                        #     "positive": {
+                        #         "term": {
+                        #             "text": question
+                        #         }
+                        #     },
+                        # },
                     },
                 size=num_results,
                 min_score=min_confidence                
