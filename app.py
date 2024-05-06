@@ -115,10 +115,8 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
     question         = request.question
     num_results      = request.num_results
     
-    index_names       = [
-    "juniper-knowledgebase-api-v2",
-    "search-juniper-documentation-chunked"
-  ]
+    index_name = "search-juniper-documentation-chunked"
+  
     es_model_name    = ".elser_model_2_linux-x86_64"
     min_confidence = 10
     
@@ -134,21 +132,21 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
     # Query indexes
     try:
         relevant_chunks = []
-        query_regular_index = await async_es_client.search(
-            index=index_names[0],
-            query={
-            "text_expansion": {
-                "tokens": {
-                    "model_id": es_model_name,
-                    "model_text": question,
-                    }
-                }
-            },
-            size=num_results,
-            min_score=min_confidence
-        )
+        # query_regular_index = await async_es_client.search(
+        #     index=index_names[0],
+        #     query={
+        #     "text_expansion": {
+        #         "tokens": {
+        #             "model_id": es_model_name,
+        #             "model_text": question,
+        #             }
+        #         }
+        #     },
+        #     size=num_results,
+        #     min_score=min_confidence
+        # )
         query_nested_index = await async_es_client.search(
-                index=index_names[1],
+                #index=index_name,
                 query={
                         "nested": {
                             "path": "passages",
@@ -167,23 +165,23 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
                 min_score=min_confidence                
         )
     except Exception as e:
-        return {"msg": "Error searching indexes", "error": e}
+        return {"msg": "Error searching index", "error": e}
     
     # Get relevant chunks and format
-    relevant_chunks = [query_regular_index, query_nested_index]
+    #relevant_chunks = x, query_nested_index]
     
-    hits_index1 = [hit for hit in relevant_chunks[0]["hits"]["hits"]] #support portal
-    hits_index2 = [hit for hit in relevant_chunks[1]["hits"]["hits"]]
+    #hits_index1 = [hit for hit in relevant_chunks[0]["hits"]["hits"]] #support portal
+    hits_index = [hit for hit in query_nested_index["hits"]["hits"]]
     context2_preprocess = []
-    for hit in hits_index2:
+    for hit in hits_index:
         for passage in hit["_source"]["passages"]:
             context2_preprocess.append(passage["text"])
     
     
     #context1 = "\n\n\n".join([rel_ctx["_source"]['Text'] for rel_ctx in hits_index1])
-    context1 = "\n" #removing support portal query
-    context2 = "\n\n\n.".join(context2_preprocess)
-    prompt_text = get_custom_prompt(llm_instructions, [context1, context2], question)
+    #context1 = "\n" #removing support portal query
+    context = "\n\n".join(context2_preprocess)
+    prompt_text = get_custom_prompt(llm_instructions, context, question)
     print("\n\n\n\n", prompt_text)    
     
     # LLM answer generation
@@ -199,16 +197,16 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
         #"text": ["Text", "text"]
     }
     
-    references_context1 = [(chunks["_source"], chunks["_score"]) for chunks in relevant_chunks[0]["hits"]["hits"]]
-    references_context2 = [(chunks["_source"], chunks["_score"]) for chunks in relevant_chunks[1]["hits"]["hits"]]
+    references_context = [(chunks["_source"], chunks["_score"]) for chunks in query_nested_index["hits"]["hits"]]
+    #references_context2 = [(chunks["_source"], chunks["_score"]) for chunks in relevant_chunks[1]["hits"]["hits"]]
     
     references = []
     
-    for (ref, score) in references_context1:
-        ref["score"] = score
+    #for (ref, score) in references_context1:
+        #ref["score"] = score
         #references.append(convert_to_uniform_format(ref, uniform_format)) Hiding support portal references
     
-    for (ref, score) in references_context2:
+    for (ref, score) in references_context:
         for passage in ref["passages"]:
             passage["score"] = score
             references.append(convert_to_uniform_format(passage, uniform_format))
@@ -224,9 +222,7 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
     return queryLLMElserResponse(**res)
 
 
-def get_custom_prompt(llm_instructions, wd_contexts, query_str):#
-    context_str = "\n".join(wd_contexts)
-
+def get_custom_prompt(llm_instructions, context_str, query_str):#
     # Replace the placeholders in llm_instructions with the actual query and context
     prompt = llm_instructions.replace("{query_str}", query_str).replace("{context_str}", context_str)
     return prompt
