@@ -115,7 +115,7 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
     question         = request.question
     num_results      = request.num_results
     
-    index_name       = "search-juniper-documentation-chunked"
+    index_name       = "search-mist-documentation-webcrawl"
     es_model_name    = ".elser_model_2_linux-x86_64"
     min_confidence = 10
     
@@ -144,7 +144,14 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
                             }
                             },
                             "inner_hits": {"_source": {"excludes": ["passages.sparse"]}}
-                        }
+                        },
+                        "boosting": {
+                            "positive": {
+                                "term": {
+                                    "text": question
+                                }
+                            },
+                        },
                     },
                 size=num_results,
                 min_score=min_confidence                
@@ -207,7 +214,7 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
     return queryLLMElserResponse(**res)
 
 
-def get_custom_prompt(llm_instructions, wd_context, query_str):#
+def get_custom_prompt(llm_instructions, wd_context, query_str):
     #context_str = "\n".join(wd_contexts)
 
     # Replace the placeholders in llm_instructions with the actual query and context
