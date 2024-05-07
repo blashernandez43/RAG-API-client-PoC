@@ -80,7 +80,7 @@ model_id = os.environ.get("LLM_MODEL_ID")
 decoding_method = os.environ.get("DECODING_METHOD")
 max_tokens = int(os.environ.get("MAX_TOKENS"))
 min_tokens = int(os.environ.get("MIN_TOKENS"))
-
+min_confidence = int(os.environ.get("MIN_CONFIDENCE"))
 
 
 llm_params = LLMParams(model_id=model_id, parameters={"decoding_method": decoding_method, "max_new_tokens": max_tokens, "min_new_tokens": min_tokens})
@@ -117,7 +117,6 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
     
     index_name       = wxd_creds["index_name"]
     es_model_name    = ".elser_model_2_linux-x86_64"
-    min_confidence = 10
     
     # Sanity check for instructions
     if "{query_str}" not in llm_instructions or "{context_str}" not in llm_instructions:
