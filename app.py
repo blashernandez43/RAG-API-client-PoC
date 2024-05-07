@@ -53,7 +53,8 @@ project_id = os.environ.get("WX_PROJECT_ID")
 wxd_creds = {
     "username": os.environ.get("WXD_USERNAME"),
     "password": os.environ.get("WXD_PASSWORD"),
-    "wxdurl": os.environ.get("WXD_URL")
+    "wxdurl": os.environ.get("WXD_URL"),
+    "index_name": os.environ.get("WXD_INDEX_NAME"),
 }
 
 wd_creds = {
@@ -74,7 +75,6 @@ async_es_client = AsyncElasticsearch(
     verify_certs=True,
     request_timeout=7200,
 )
-
 
 model_id = os.environ.get("LLM_MODEL_ID")
 decoding_method = os.environ.get("DECODING_METHOD")
@@ -115,7 +115,7 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
     question         = request.question
     num_results      = request.num_results
     
-    index_name       = "search-mist-documentation-webcrawl"
+    index_name       = wxd_creds["index_name"]
     es_model_name    = ".elser_model_2_linux-x86_64"
     min_confidence = 10
     
