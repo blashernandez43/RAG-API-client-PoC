@@ -116,8 +116,8 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
     num_results      = request.num_results
     
     index_names       = [
-    "juniper-knowledgebase-api-v2",
-    "search-juniper-documentation-chunked"
+    "juniper_knowledge_base_dest",
+    "search-mist-documentation-webcrawl"
   ]
     es_model_name    = ".elser_model_2_linux-x86_64"
     min_confidence = 10
@@ -130,7 +130,9 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
             "error": "LLM instructions must contain {query_str} and {context_str}"
         }
         return queryLLMElserResponse(**data_response)
-    
+    #Hardcode number of responses
+    num_results = 5
+
     # Query indexes
     try:
         relevant_chunks = []
@@ -138,7 +140,7 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
             index=index_names[0],
             query={
             "text_expansion": {
-                "tokens": {
+                "content_embedding": {
                     "model_id": es_model_name,
                     "model_text": question,
                     }
@@ -180,10 +182,10 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
             context2_preprocess.append(passage["text"])
     
     
-    context1 = "\n\n\n".join([rel_ctx["_source"]['Text'] for rel_ctx in hits_index1])
-    context2 = "\n\n\n.".join(context2_preprocess)
+    context1 = "\n\n".join([rel_ctx["_source"]['text'] for rel_ctx in hits_index1])
+    context2 = "\n\n".join(context2_preprocess)
     prompt_text = get_custom_prompt(llm_instructions, [context1, context2], question)
-    print("\n\n\n\n", prompt_text)    
+    print("\n\n\n", prompt_text)    
     
     # LLM answer generation
     print(model.params.items())
@@ -216,8 +218,7 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
     
     res = {
         "llm_response": model_res,
-        "references": references
-        
+        "references": references[0:4]
     }
     
     return queryLLMElserResponse(**res)
