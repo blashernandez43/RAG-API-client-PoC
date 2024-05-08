@@ -131,7 +131,7 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
         }
         return queryLLMElserResponse(**data_response)
     #Hardcode number of responses
-    num_results = 5
+    num_results = 4
 
     # Query indexes
     try:
@@ -146,7 +146,8 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
                     }
                 }
             },
-            size=num_results,
+            #size=num_results,
+            size=2,
             min_score=min_confidence
         )
         query_nested_index = await async_es_client.search(
@@ -165,7 +166,8 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
                             "inner_hits": {"_source": {"excludes": ["passages.sparse"]}}
                         }
                     },
-                size=num_results,
+                #size=num_results,
+                size=3,
                 min_score=min_confidence                
         )
     except Exception as e:
@@ -176,6 +178,9 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
     
     hits_index1 = [hit for hit in relevant_chunks[0]["hits"]["hits"]]
     hits_index2 = [hit for hit in relevant_chunks[1]["hits"]["hits"]]
+    #hits = (text, relevance)
+    print("Hits indices:")
+    print(hits_index1, hits_index2)
     context2_preprocess = []
     for hit in hits_index2:
         for passage in hit["_source"]["passages"]:
@@ -215,10 +220,11 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
             references.append(convert_to_uniform_format(passage, uniform_format))
             
     references = sort_and_delete_duplicates(references, sort_key="score", unique_key="url")
-    
+    references = references[0:3]
+
     res = {
         "llm_response": model_res,
-        "references": references[0:4]
+        "references": references
     }
     
     return queryLLMElserResponse(**res)
