@@ -186,7 +186,6 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
         for passage in hit["_source"]["passages"]:
             context2_preprocess.append(passage["text"])
     
-    
     context1 = "\n\n".join([rel_ctx["_source"]['text'] for rel_ctx in hits_index1])
     context2 = "\n\n".join(context2_preprocess)
     prompt_text = get_custom_prompt(llm_instructions, [context1, context2], question)
@@ -232,7 +231,7 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
 
 def get_custom_prompt(llm_instructions, wd_contexts, query_str):#
     context_str = "\n".join(wd_contexts)
-
+    context_str = context_str[0:120000] #Limit to 120k chars
     # Replace the placeholders in llm_instructions with the actual query and context
     prompt = llm_instructions.replace("{query_str}", query_str).replace("{context_str}", context_str)
     return prompt
