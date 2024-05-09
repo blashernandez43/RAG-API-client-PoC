@@ -120,7 +120,7 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
     "search-mist-documentation-webcrawl"
   ]
     es_model_name    = ".elser_model_2_linux-x86_64"
-    min_confidence = 10
+    min_confidence = 9.5
     
     # Sanity check for instructions
     if "{query_str}" not in llm_instructions or "{context_str}" not in llm_instructions:
@@ -147,7 +147,7 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
                 }
             },
             #size=num_results,
-            size=3,
+            size=2,
             min_score=min_confidence
         )
         query_nested_index = await async_es_client.search(
