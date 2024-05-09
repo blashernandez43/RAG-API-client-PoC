@@ -147,7 +147,7 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
                 }
             },
             #size=num_results,
-            size=2,
+            size=3,
             min_score=min_confidence
         )
         query_nested_index = await async_es_client.search(
@@ -167,7 +167,7 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
                         }
                     },
                 #size=num_results,
-                size=3,
+                size=5,
                 min_score=min_confidence                
         )
     except Exception as e:
