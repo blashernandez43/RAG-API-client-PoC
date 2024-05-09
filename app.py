@@ -1,256 +1,456 @@
-import os
-import uvicorn
-import sys
-
-from dotenv import load_dotenv
-
-# Fast API
-from fastapi import FastAPI, Security, HTTPException
-from fastapi.security.api_key import APIKeyHeader
-from starlette.status import HTTP_403_FORBIDDEN, HTTP_500_INTERNAL_SERVER_ERROR
-from fastapi.middleware.cors import CORSMiddleware
-
-# ElasticSearch
-from elasticsearch import AsyncElasticsearch
-
-# wx.ai
+import streamlit as st
+from elasticsearch import Elasticsearch
+from sentence_transformers import SentenceTransformer, util
+import os,logging
 from ibm_watson_machine_learning.foundation_models import Model
 from ibm_watson_machine_learning.metanames import GenTextParamsMetaNames as GenParams
+from dotenv import load_dotenv
+from transformers import AutoTokenizer
+import time
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+import torch.nn as nn
 
-
-# Custom type classes
-from customTypes.queryLLMElserResponse import queryLLMElserResponse
-from customTypes.queryLLMElserRequest import queryLLMElserRequest, LLMParams
-
-
-
-# wx.ai
-from ibm_watson_machine_learning.foundation_models import Model
-
-app = FastAPI()
-
-# Set up CORS
-origins = ["*"]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
+#config Watsonx.ai environment
 load_dotenv()
-# RAG APP Security
-API_KEY_NAME = "RAG-APP-API-Key"
-api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
+api_key = os.getenv("IBM_CLOUD_API_KEY", None)        
+ibm_cloud_url = os.getenv("IBM_CLOUD_ENDPOINT", None) 
+project_id = os.getenv("IBM_CLOUD_PROJECT_ID", None)
 
-#Token to IBM Cloud
-ibm_cloud_api_key = os.environ.get("IBM_CLOUD_API_KEY")
-project_id = os.environ.get("WX_PROJECT_ID")
+if api_key is None or ibm_cloud_url is None or project_id is None:
+    raise Exception("Ensure you copied the .env file that you created earlier into the same directory as this notebook")
+else:
+    creds = {
+        "url": ibm_cloud_url,
+        "apikey": api_key 
+    }
 
-# wxd creds
-wxd_creds = {
-    "username": os.environ.get("WXD_USERNAME"),
-    "password": os.environ.get("WXD_PASSWORD"),
-    "wxdurl": os.environ.get("WXD_URL")
-}
 
-wd_creds = {
-    "apikey": os.environ.get("WD_API_KEY"),
-    "wd_url": os.environ.get("WD_URL")
-}
+# sparse_index_name = "search-juniper-sparse-84k"
+sparse_index_name = "search-juniper-sparse-99k-50overlap"
+knn_index_name = "search-juniper-dense-minilm_l6_512-84k"
+knapi_index="juniper-knowledgebase-api-v2"
+jdc_index="search-juniper-documentation-chunked"
 
-# WML Creds
-wml_credentials = {
-    "url": os.environ.get("WX_URL"),
-    "apikey": os.environ.get("IBM_CLOUD_API_KEY")
-}
+# es_endpoint= os.getenv('ES_END_POINT')
+# es_user=os.getenv('ES_USER')
+# es_password=os.getenv('ES_PASSWORD')
 
-# Create a global client connection to elastic search
-async_es_client = AsyncElasticsearch(
-    wxd_creds["wxdurl"],
-    basic_auth=(wxd_creds["username"], wxd_creds["password"]),
+try:
+    es = Elasticsearch(
+    "https://juniper-index-test-alpha.es.us-west1.gcp.cloud.es.io",
+    basic_auth=("elastic", "zX2tnZBrF3IaAXAvelfYzB9b"),
     verify_certs=True,
-    request_timeout=3600,
-)
+    request_timeout=10000
+    )
 
+    dense_es = Elasticsearch(
+    "https://juniper-index-test-beta.es.us-central1.gcp.cloud.es.io",
+    basic_auth=("elastic", "PKPB5pPfprKn3yWaplNxqJzJ"),
+    verify_certs=True,
+    request_timeout=10000
+    )
 
-model_id = os.environ.get("LLM_MODEL_ID")
-decoding_method = os.environ.get("DECODING_METHOD")
-max_tokens = int(os.environ.get("MAX_TOKENS"))
-min_tokens = int(os.environ.get("MIN_TOKENS"))
-
-
-
-llm_params = LLMParams(model_id=model_id, parameters={"decoding_method": decoding_method, "max_new_tokens": max_tokens, "min_new_tokens": min_tokens})
-
-llm_instructions = os.environ.get("LLM_INSTRUCTIONS")
-
-model = Model(
-model_id=model_id,
-params=llm_params.parameters.dict(),
-credentials=wml_credentials,
-project_id=project_id
-)
-
-
-
-# Basic security for accessing the App
-async def get_api_key(api_key_header: str = Security(api_key_header)):
-    if api_key_header == os.environ.get("RAG_APP_API_KEY"):
-        return api_key_header
-    else:
-        raise HTTPException(
-            status_code=HTTP_403_FORBIDDEN, detail="Could not validate RAG APP credentials. Please check your ENV."
-        )
-
-@app.get("/")
-def index(api_key: str = Security(get_api_key)):
-    return {"Hello": "World"}
-
-
-@app.post("/queryWXDLLM")
-async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get_api_key))->queryLLMElserResponse:
-    question         = request.question
-    num_results      = request.num_results
+except ConnectionError as e:
+    print("Connection Error:", e)
     
-    index_name = "search-juniper-documentation-chunked"
-  
-    es_model_name    = ".elser_model_2_linux-x86_64"
-    min_confidence = 10
+if es.ping():
+    print("Succesfully connected to ElasticSearch!!")
+else:
+    print("Oops!! Can not connect to Elasticsearch!")
+
+
+
+
+def build_prompt(user_query,context):
+
+    SYSTEM_PROMPT = """You are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.
+    If a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don't know the answer to a question, please don't share false information."""
+
+    USER_PROMPT = """A user has asked the following question: '{question}'. Use the information available from the '{context}' to provide a detailed and accurate answer in less than 150 words. If necessary, cite relevant sources or data to support your response. Ensure your answer is clearly structured and directly addresses the question.
+    If the answer to the question is not available in the any of the provided context, please say: "I don't know the answer to that question." 
+    While you have to answer only from the context, the answer language must be in the way such that it is coming from your own knowledge,
+
+    Keep following things in mind:
+    - Give the output with proper markdown styling features [#, -, * , ``, ```code `] .
+    - Provide source attribution with Superscript within the answer and links at the end.
+    """
+    LLAMA3_PROMPT= """
+    <|begin_of_text|><|start_header_id|>system<|end_header_id|>
+    {system_prompt}<|eot_id|><|start_header_id|>user<|end_header_id|>
+    {user_prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+    Answer Based on the Provided Context: 
+    """
+    user_prompt = USER_PROMPT.format(question=user_query,context=context)
+    formatted_prompt = LLAMA3_PROMPT.format(system_prompt=SYSTEM_PROMPT,user_prompt=user_prompt)
+    return formatted_prompt
+
+
+def send_to_watsonxai(prompts,
+                    model_name="meta-llama/llama-3-70b-instruct",
+                    decoding_method="greedy",
+                    max_new_tokens=500,
+                    min_new_tokens=30,
+                    temperature=1.0,
+                    repetition_penalty=1.0
+                    ):
+
+    assert not any(map(lambda prompt: len(prompt) < 1, prompts)), "make sure none of the prompts in the inputs prompts are empty"
+
+    # Instantiate parameters for text generation
+    model_params = {
+        GenParams.DECODING_METHOD: decoding_method,
+        GenParams.MIN_NEW_TOKENS: min_new_tokens,
+        GenParams.MAX_NEW_TOKENS: max_new_tokens,
+        GenParams.RANDOM_SEED: 42,
+        GenParams.TEMPERATURE: temperature,
+        GenParams.REPETITION_PENALTY: repetition_penalty,
+    }
+
+
+    # Instantiate a model proxy object to send your requests
+    model = Model(
+        model_id=model_name,
+        params=model_params,
+        credentials=creds,
+        project_id=project_id)
+
+    response=model.generate_text(prompts)
+    # for prompt in prompts:
+    #     print(model.generate_text(prompt))
+    return response
+
+# Function to compute cosine similarity
+def compute_cosine_similarity(input_text, response_text):
+    # Create TF-IDF vectorizer
+    vectorizer = TfidfVectorizer()
+
+    # Fit and transform the text data
+    tfidf_matrix = vectorizer.fit_transform([input_text, response_text])
+
+    # Compute cosine similarity
+    cosine_sim = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])
+
+    return cosine_sim[0][0]
+
+
+# Function to compute embeddings
+def compute_sentence_embeddings(text):
+    model = SentenceTransformer('all-MiniLM-L6-v2')
+    embeddings = model.encode(text, convert_to_tensor=True)
+    return embeddings
+
+# Function to compute similarity using cosine similarity
+def compute_similarity(embedding1, embedding2):
+    # Compute cosine similarity between embeddings
+    similarity_score = util.pytorch_cos_sim(embedding1, embedding2)
+
+    return similarity_score.item()
+
+def search_knn(question):
+    model = SentenceTransformer('all-MiniLM-L6-v2')
+    vector_of_input_keyword = model.encode(question)
+
+    # query = {
+    #     "field": "DescriptionVector",
+    #     "query_vector": vector_of_input_keyword,
+    #     "k": 10,
+    #     "num_candidates": 500
+    # }
     
-    # Sanity check for instructions
-    if "{query_str}" not in llm_instructions or "{context_str}" not in llm_instructions:
-        data_response = {
-            "llm_response": "",
-            "references": [],
-            "error": "LLM instructions must contain {query_str} and {context_str}"
-        }
-        return queryLLMElserResponse(**data_response)
-    
-    # Query indexes
-    try:
-        relevant_chunks = []
-        # query_regular_index = await async_es_client.search(
-        #     index=index_names[0],
-        #     query={
-        #     "text_expansion": {
-        #         "tokens": {
-        #             "model_id": es_model_name,
-        #             "model_text": question,
-        #             }
-        #         }
-        #     },
-        #     size=num_results,
-        #     min_score=min_confidence
-        # )
-        query_nested_index = await async_es_client.search(
-                #index=index_name,
-                query={
-                        "nested": {
-                            "path": "passages",
-                            "query": {
-                            "text_expansion": {
-                                "passages.sparse.tokens": {
-                                "model_id": es_model_name,
-                                "model_text": question
-                                }
-                            }
-                            },
-                            "inner_hits": {"_source": {"excludes": ["passages.sparse"]}}
+    query =   {    "query": {
+                    "multi_match" : {
+                        "query":question,
+                            "type":"best_fields",
+                            "fields":[ "body_content", "title"]
+
                         }
                     },
-                size=num_results,
-                min_score=min_confidence                
-        )
-    except Exception as e:
-        return {"msg": "Error searching index", "error": e}
+                    "knn": {
+                        "field": "content_embedding",
+                        "query_vector": vector_of_input_keyword,
+                        "k": 10,
+                        "num_candidates": 100,
+                        "boost": 10
+                    },
+                    #"size": 5
+            }
     
-    # Get relevant chunks and format
-    #relevant_chunks = x, query_nested_index]
+    response = dense_es.search(
+                index=knn_index_name,
+                body=query,
+                scroll='5m',  # Set the scroll timeout (e.g., 5 minutes)
+                size=1  # Set the number of documents to retrieve per scroll
+                )
+    all_hits = response['hits']['hits']
+    print(len(all_hits))
+
+    return all_hits
+def search_es(question):
+    # question = "Whats in front panel of a JA2500?"
+    # vector_of_input_keyword = model.encode(input_keyword)
+    es_model_name    = ".elser_model_2_linux-x86_64"
+    min_confidence = 10
+    num_results =5
+    top_k=20
+    input_query= {
+            "query": {
+                "bool": { 
+                "should": [
+                    {
+                    "text_expansion": {
+                        "ml.tokens": {
+                        "model_text":question,
+                        "model_id": es_model_name
+                        }
+                    }
+                    }
+                ],
+                "must": {
+                    "multi_match" : {
+                    "query":question,
+                    "type":"best_fields",
+                    "fields":[ "title", "body_content"]
+                }
+                }
+                }
+                },
+            "min_score": 1 
+            }
     
-    #hits_index1 = [hit for hit in relevant_chunks[0]["hits"]["hits"]] #support portal
-    hits_index = [hit for hit in query_nested_index["hits"]["hits"]]
-    context2_preprocess = []
-    for hit in hits_index:
-        for passage in hit["_source"]["passages"]:
-            context2_preprocess.append(passage["text"])
+    response = es.search(
+            index=sparse_index_name,
+            # size=top_k,
+            body=input_query,
+            scroll='5m',  # Set the scroll timeout (e.g., 5 minutes)
+            size=top_k  # Set the number of documents to retrieve per scroll
+            )
+    all_hits = response['hits']['hits']
+    print(len(all_hits))
+    flag = False
+
+    return all_hits
+
+
+def search_es_jdc(question):
+    # question = "Whats in front panel of a JA2500?"
+    # vector_of_input_keyword = model.encode(input_keyword)
+    es_model_name    = ".elser_model_2_linux-x86_64"
+    min_confidence = 10
+    num_results =5
+
+    input_query= {
+                    "query": {
+                        "nested": {
+                        "path": "passages",
+                        "query": {
+                            "text_expansion": {
+                            "passages.sparse.tokens": {
+                                "model_id": es_model_name,
+                                "model_text": question
+                            }
+                            }
+                        },
+                        "inner_hits": {"_source": {"excludes": ["passages.sparse"]}}
+                        }
+                    }
+                    }
+    response = es.search(
+            index=jdc_index,
+            body=input_query,
+            scroll='5m',  # Set the scroll timeout (e.g., 5 minutes)
+            size=3  # Set the number of documents to retrieve per scroll
+            )
+    all_hits = response['hits']['hits']
+    print(len(all_hits))
+    flag = False
+
+    return all_hits
+
+
+# knapi_index="juniper-knowledgebase-api-v2"
+# jdc_index="search-juniper-documentation-chunked"
+def search_es_knapi(question):
+    # question = "Whats in front panel of a JA2500?"
+    # vector_of_input_keyword = model.encode(input_keyword)
+    es_model_name    = ".elser_model_2_linux-x86_64"
+    min_confidence = 10
+    num_results =5
+
+    input_query= {
+                    "query": { "text_expansion": {
+                "tokens": {
+                    "model_id": es_model_name,
+                    "model_text": question,
+                    }
+                }
+            }}
+    response = es.search(
+            index=knapi_index,
+            body=input_query,
+            scroll='5m',  # Set the scroll timeout (e.g., 5 minutes)
+            size=3  # Set the number of documents to retrieve per scroll
+            )
+    all_hits = response['hits']['hits']
+    print(len(all_hits))
+    flag = False
+
+    return all_hits
+
+def reranker(query, hits):
+    from sentence_transformers import CrossEncoder
     
+    # To refine the results, we use a CrossEncoder
+    cross_encoder_model = CrossEncoder("cross-encoder/stsb-roberta-base")
+    # cross_encoder_model = CrossEncoder("cross-encoder/ms-marco-TinyBERT-L-2-v2")
+
+    # Now, do the re-ranking with the cross-encoder
+    sentence_pairs = [[query, hit["_source"]["chunk_text"]] for hit in hits]
+    similarity_scores = cross_encoder_model.predict(sentence_pairs,activation_fct=nn.Sigmoid())
+    # similarity_scores = cross_encoder_model.predict(sentence_pairs,activation_fct=nn.Sigmoid())
     
-    #context1 = "\n\n\n".join([rel_ctx["_source"]['Text'] for rel_ctx in hits_index1])
-    #context1 = "\n" #removing support portal query
-    context = "\n\n".join(context2_preprocess)
-    prompt_text = get_custom_prompt(llm_instructions, context, question)
-    print("\n\n\n\n", prompt_text)    
-    
-    # LLM answer generation
-    print(model.params.items())
-    model_res = model.generate_text(prompt_text)
-    
-    # LLM references formatting
-    
-    uniform_format = {
-        "url": ["url"],
-        "title": ["title"],
-        "score": ["score"],
-        #"text": ["Text", "text"]
-    }
-    
-    references_context = [(chunks["_source"], chunks["_score"]) for chunks in query_nested_index["hits"]["hits"]]
-    #references_context2 = [(chunks["_source"], chunks["_score"]) for chunks in relevant_chunks[1]["hits"]["hits"]]
-    
-    references = []
-    
-    #for (ref, score) in references_context1:
-        #ref["score"] = score
-        #references.append(convert_to_uniform_format(ref, uniform_format)) Hiding support portal references
-    
-    for (ref, score) in references_context:
-        for passage in ref["passages"]:
-            passage["score"] = score
-            references.append(convert_to_uniform_format(passage, uniform_format))
+    for idx in range(len(hits)):
+        hits[idx]["cross-encoder_score"] = similarity_scores[idx]
+
+    # Sort list by CrossEncoder scores
+    hits = sorted(hits, key=lambda x: x["cross-encoder_score"], reverse=True)
+
+    for hit in hits:
+        print("\t{:.3f}\t{}".format(hit["cross-encoder_score"], hit["_source"]["chunk_text"]))
+        # st.info("cross-encoder_score")
+        # st.write(hit["cross-encoder_score"])
+        # st.write(hit["_source"]["chunk_text"])
+    top_hits=hits[:3]
+    print("\n\n========\n")
+    return top_hits
+def main():
+    st.title("Search Juniper Docs")
+    # Input: User enters search query
+    search_query = st.text_input("Enter your search query")
+    #
+
+# sparse_index_name = "search-juniper-chunked-sparce-test_2k"
+# knn_index_name = "search-juniper-chunked-dense-test_2k"
+# knapi_index="juniper-knowledgebase-api-v2"
+# jdc_index="search-juniper-documentation-chunked"
+    # search_method = st.radio("Select Index method:", ["Dense Index(search-juniper-chunked-dense-test_2k)", "Sparse Index(search-juniper-chunked-sparce-test_2k)","juniper-documentation-chunked","knowledgebase-api-v2"])
+    # search_method = st.radio("Select Index method:", ["Dense Index", "Sparse Index"])
+    search_method = st.radio("Select Index method:", ["Sparse Index"])
+
+    #Button: User triggers the search
+    if st.button("Search"):
+        if search_query:
+            # Perform the search and get results
+            st.divider()
             
-    references = sort_and_delete_duplicates(references, sort_key="score", unique_key="url")
-    
-    res = {
-        "llm_response": model_res,
-        "references": references
-        
-    }
-    
-    return queryLLMElserResponse(**res)
+            if search_method == "Dense Index":
+                search_time_start = time.time()
+                results = search_knn(search_query)
+                search_time_end = time.time()
+                search_elapsed_time = search_time_end - search_time_start
+                st.info(f"Time taken to Search: {search_elapsed_time:.2f} seconds")
+                context =""
+                for result in results:
+                    print(result["_score"])
+                    print(result["_source"]["title"])
+                    # print(result["_source"]["chunk_no"])
+                    print(result["_source"]["main_content"])
+                    if '_source' in result:
+                        try:
+                            context = context + "" + "**" + str(result['_source']['title']) +"** "+ "\n\n"
+                            context  = context + "" + str(result['_source']['main_content']) + "\n\n"
+                            context  = context + "" + str(result['_source']['url']) + "\n\n"
+                        except Exception as e:
+                            print(e)
+            elif search_method == "Sparse Index":
+                search_time_start = time.time()
+                results = search_es(search_query)
+                search_time_end = time.time()
+                search_elapsed_time = search_time_end - search_time_start
+                st.info(f"Time taken to Search: {search_elapsed_time:.2f} seconds")
+                top_hits=reranker(search_query,results)
+                context =""
+                for result in top_hits:
+                    print(result["_score"])
+                    print(result["_source"]["title"])
+                    # print(result["_source"]["chunk_no"])
+                    print(result["_source"]["chunk_text"])
+                    if '_source' in result:
+                        try:
+                            
+                            context = context + "**" + str(result['_source']['title']) +"** "+ "\n\n"
+                            context = context + "Relevance:"+ "**" + str(result['cross-encoder_score'])+ "**"+"\n\n"
+                            context = context + str(result['_source']['chunk_text']) + "\n\n"
+                            context  = context + "" + str(result['_source']['url']) + "\n\n"
+                        except Exception as e:
+                            print(e)
+            # elif search_method == "juniper-documentation-chunked":
+            #     search_time_start = time.time()
+            #     results = search_es_jdc(search_query)
+            #     search_time_end = time.time()
+            #     search_elapsed_time = search_time_end - search_time_start
+            #     st.info(f"Time taken to Search: {search_elapsed_time:.2f} seconds")
+            #     context =""
+            #     st.write(results)
+            #     for result in results:
+            #         print(result["_score"])
+            #         print(result["_source"]["title"])
+            #         # print(result["_source"]["chunk_no"])
+            #         print(result["_source"]["passages"][0]['text'])
+            #         if '_source' in result:
+            #             try:
+            #                 context = context + "**" + str(result['_source']['title']) +"** "+ "\n\n"
+            #                 context = context + str(result['_source']["passages"][0]['text']) + "\n\n"
+            #             except Exception as e:
+            #                 print(e)
 
+            # elif search_method == "knowledgebase-api-v2":
+            #     search_time_start = time.time()
+            #     results = search_es_knapi(search_query)
+            #     search_time_end = time.time()
+            #     search_elapsed_time = search_time_end - search_time_start
+            #     st.info(f"Time taken to Search: {search_elapsed_time:.2f} seconds")
+            #     context =""
+            #     st.write(results)
+            #     for result in results:
+            #         print(result["_score"])
+            #         # print(result["_source"]["title"])
+            #         # print(result["_source"]["chunk_no"])
+            #         print(result["_source"]["Text"])
+            #         if '_source' in result:
+            #             try:
+            #                 # context = context + "**" + str(result['_source']['title']) +"** "+ "\n\n"
+            #                 context = context + str(result['_source']['Text']) + "\n\n"
+            #             except Exception as e:
+            #                 print(e)
+            with st.expander("References", expanded=False):
+                if len(context):
+                    st.write(context)
 
-def get_custom_prompt(llm_instructions, context_str, query_str):#
-    # Replace the placeholders in llm_instructions with the actual query and context
-    prompt = llm_instructions.replace("{query_str}", query_str).replace("{context_str}", context_str)
-    return prompt
+            llm_input=build_prompt(search_query,context)
+            # st.write(llm_input)
+            llm_start_time = time.time()
+            llm_response=send_to_watsonxai(llm_input)
+            llm_end_time = time.time()
+            llm_elapsed_time = llm_end_time - llm_start_time
+            st.info(f"Time taken to LLM response: {llm_elapsed_time:.2f} seconds")
+            st.write(llm_response)
 
-def convert_to_uniform_format(obj, uniform_format):
-    uniform_obj = {}
-    for key, possible_keys in uniform_format.items():
-        for possible_key in possible_keys:
-            if possible_key in obj:
-                uniform_obj[key] = obj[possible_key]
-                break
-        if key not in uniform_obj:
-            uniform_obj[key] = None
-    return uniform_obj
-
-def sort_and_delete_duplicates(obj_list, sort_key, unique_key):
-    sorted_objects = sorted(obj_list, key=lambda x: x[sort_key], reverse=True)
-    
-    unique_objects = []
-    seen_keys = set()
-    for obj in sorted_objects:
-        if obj[unique_key] not in seen_keys:
-            unique_objects.append(obj)
-            seen_keys.add(obj[unique_key])
+            # st.divider()
             
-    return unique_objects
-    
+            # Simialrity Calculating
+            # # Text input for response
+            # #llm_response="The user is receiving a splash message to contact support for provisioning the Premium Analytics dashboard because the provisioning process has not been completed yet. Although the user has a Premium Analytics subscription, the provisioning process takes 24-48 hours to complete. This is a standard process for new subscriptions, and the user needs to wait for the provisioning to finish before they can access the Premium Analytics dashboard."
+            # golden_response = st.text_area("Enter Ground Truth response:", "")
+            # # Submit button
+            # if st.button("Submit"):
+            #     # Compute embeddings for input and response passages
+            #     input_embedding = compute_sentence_embeddings(st.session_state.llm_response)
+            #     response_embedding = compute_sentence_embeddings(st.session_state.golden_response)
+            #     # Compute similarity between embeddings
+            #     similarity_score_2 = compute_similarity(input_embedding, response_embedding)
+            #     st.write(f"Torch  Similarity Score: {similarity_score_2:.2f}")
+                    
+if __name__ == "__main__":
+    main()
 
-if __name__ == '__main__':
-    if 'uvicorn' not in sys.argv[0]:
-        uvicorn.run("app:app", host='0.0.0.0', port=4050, reload=True)
