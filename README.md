@@ -41,24 +41,4 @@ To install this project locally, follow these steps:
 
    You will see a streamlit app launch at `http://localhost:8501/`
 
-## How to Deploy on Code Engine
-
-We have created Terraform scripts to help deploy this on **IBM Cloud Code Engine** service. Make sure you have this service provisioned.
-
-1. Clone the repo: `git clone https://github.com/ibm-build-lab/rag-codeengine-terraform-setup/tree/updatedTF`
-2. Change into the cloned directory `cd rag-codeengine-terraform-setup`
-3. Edit the `terraform.tfvars` file and fill in all the required values. Note for this api, the COS and WD variables are unnecessary and can be left as default.
-4. Update the `variables.tf` file to change the value of `source_url` to point to `https://github.com/blashernandez43/RAG-API-client-PoC`
-5. Run `terraform init` to initialize your terraform environment
-6. Run `terraform plan` to see what resources will be created
-7. Run `terraform apply` to create the resources
-
-Verify that this has created a **Code Engine** project and application. 
-
-- From the IBM Cloud search bar, search on `Code Engine` to bring up the service
-- Go to `Projects` and search for the project you specified in the `terraform.tfvars` file
-- Within the project you should see an application running with a `Ready` status
-
-### Accessing the URL on Code Engine
-
 Wait for the build to complete and access the public URL by selecting the **Domain mappings** tab of the open **Application** pane.  Or go into the project by selecting **Projects** from the **Code Engine** side menu. Open the project, then select **Applications**. You will see a URL link under the **Application Link**.
