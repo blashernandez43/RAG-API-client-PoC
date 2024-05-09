@@ -9,12 +9,10 @@ COPY requirements.txt /app/requirements.txt
 USER 0
 RUN pip3 install -r requirements.txt
 
-# Copy your FastAPI Python script to the container
+# Copy your streamlit Python script to the container
 COPY . .
-
-RUN python3 prereqs.py
 
 EXPOSE 4050
 
-# Set the command to run your Python script
-CMD ["python3", "app.py"]
+# Set the command to run app
+ENTRYPOINT ["streamlit", "run", "streamlit_app.py", "--server.port=4050", "--server.address=0.0.0.0"]
