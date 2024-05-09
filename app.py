@@ -178,15 +178,15 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
     hits_index1 = [hit for hit in relevant_chunks[0]["hits"]["hits"]]
     hits_index2 = [hit for hit in relevant_chunks[1]["hits"]["hits"]]
     #hits = (text, relevance)
-    print("Hits indices:")
-    print(hits_index1, hits_index2)
+    #print("Hits indices:")
+    #print(hits_index1, hits_index2)
     context2_preprocess = []
     for hit in hits_index2:
         for passage in hit["_source"]["passages"]:
             print("2. Appending text of length " + str(len(passage["text"])))
             context2_preprocess.append(passage["text"])
-    context2 = context_str = ' '.join("".join(context2_preprocess).split()[:11000]) #Limit to 20k words
-
+    context2 = context_str = ("\n".join(context2_preprocess))[:80000] #Limit to 50k chars
+    print(context2)
     for rel in hits_index1:
         print("1. Appending text of length " + str(len(rel["_source"]["text"])))
 
@@ -234,10 +234,10 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
 
 
 def get_custom_prompt(llm_instructions, wd_contexts, query_str):#
-    context_str = "\n".join(wd_contexts)
+    context_str = "\n\n".join(wd_contexts)
     
     # Replace the placeholders in llm_instructions with the actual query and context
-    prompt = llm_instructions.replace("{query_str}", query_str).replace("{context_str}", context_str)
+    prompt = llm_instructions.replace("{query_str}", query_str).replace("{context_str}", context_str) + "\n"
     return prompt
 
 def convert_to_uniform_format(obj, uniform_format):
