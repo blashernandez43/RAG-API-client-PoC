@@ -147,7 +147,7 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
                 }
             },
             #size=num_results,
-            size=2,
+            size=3,
             min_score=min_confidence
         )
         query_nested_index = await async_es_client.search(
@@ -166,7 +166,7 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
                             "inner_hits": {"_source": {"excludes": ["passages.sparse"]}}
                         }
                     },
-                size=4,
+                size=5,
                 min_score=min_confidence                
         )
     except Exception as e:
@@ -185,7 +185,7 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
         for passage in hit["_source"]["passages"]:
             print("2. Appending text of length " + str(len(passage["text"])))
             context2_preprocess.append(passage["text"])
-    context2 = context_str = ' '.join("".join(context2_preprocess).split()[:10000]) #Limit to 20k words
+    context2 = context_str = ' '.join("".join(context2_preprocess).split()[:11000]) #Limit to 20k words
 
     for rel in hits_index1:
         print("1. Appending text of length " + str(len(rel["_source"]["text"])))
