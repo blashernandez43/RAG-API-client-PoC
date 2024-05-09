@@ -15,4 +15,4 @@ COPY . .
 EXPOSE 4050
 
 # Set the command to run app
-ENTRYPOINT ["streamlit", "run", "streamlit_app.py", "--server.port=4050"]
+ENTRYPOINT ["streamlit", "run", "streamlit_app.py", "--server.port=4050", "--server.address=0.0.0.0"]
