@@ -11,7 +11,7 @@ from starlette.status import HTTP_403_FORBIDDEN, HTTP_500_INTERNAL_SERVER_ERROR
 from fastapi.middleware.cors import CORSMiddleware
 
 # ElasticSearch
-from elasticsearch import AsyncElasticsearch
+from elasticsearch import AsyncElasticsearch, Elasticsearch
 
 # wx.ai
 from ibm_watson_machine_learning.foundation_models import Model
@@ -21,8 +21,9 @@ from ibm_watson_machine_learning.metanames import GenTextParamsMetaNames as GenP
 # Custom type classes
 from customTypes.queryLLMElserResponse import queryLLMElserResponse
 from customTypes.queryLLMElserRequest import queryLLMElserRequest, LLMParams
-
-
+from JuniperMultiModel import JuniperMultiModel
+import asyncio
+import aiohttp
 
 # wx.ai
 from ibm_watson_machine_learning.foundation_models import Model
@@ -75,13 +76,27 @@ async_es_client = AsyncElasticsearch(
     request_timeout=3600,
 )
 
+# ELSER Model elastic connection
+
+es_client_elser = Elasticsearch(
+    os.environ.get("ELSER_ES_URL"),
+    basic_auth=(os.environ.get("ELSER_ES_USER"),os.environ.get("ELSER_ES_PASS")),
+    verify_certs=True,
+    request_timeout=10000
+)
+# Dense Model elastic connection
+
+es_client_dense = Elasticsearch(
+    os.environ.get("DENSE_ES_URL"),
+    basic_auth=(os.environ.get("DENSE_ES_USER"),os.environ.get("DENSE_ES_PASS")),
+    verify_certs=True,
+    request_timeout=10000
+)
 
 model_id = os.environ.get("LLM_MODEL_ID")
 decoding_method = os.environ.get("DECODING_METHOD")
 max_tokens = int(os.environ.get("MAX_TOKENS"))
 min_tokens = int(os.environ.get("MIN_TOKENS"))
-
-
 
 llm_params = LLMParams(model_id=model_id, parameters={"decoding_method": decoding_method, "max_new_tokens": max_tokens, "min_new_tokens": min_tokens})
 
@@ -93,8 +108,6 @@ params=llm_params.parameters.dict(),
 credentials=wml_credentials,
 project_id=project_id
 )
-
-
 
 # Basic security for accessing the App
 async def get_api_key(api_key_header: str = Security(api_key_header)):
@@ -232,6 +245,33 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
     
     return queryLLMElserResponse(**res)
 
+## end to end call retrieve document from elasticsearch and with the context make LLM call to watsonx.ai
+@app.post("/pipeline")
+def pipeline(request: queryLLMElserRequest, api_key: str = Security(get_api_key)):
+    question         = request.question
+    juniper = JuniperMultiModel()
+    elserContext, denseContext = juniper.retrieve_documents(
+        question=question,
+        es_elser_client=es_client_elser, 
+        es_dense_client=es_client_dense)
+
+    mixtral_elser = juniper.build_prompt(context=elserContext,model_id="MIXTRAL", user_query=question)
+    #lama3_elser = juniper.build_prompt(context=elserContext,model_id="LLAMA3", user_query=question)
+    mixtral_dense = juniper.build_prompt(context=denseContext,model_id="MIXTRAL", user_query=question)
+    #lama3_dense = juniper.build_prompt(context=denseContext,model_id="LLAMA3", user_query=question)
+
+    async def fetch_all_results():
+        async with aiohttp.ClientSession() as session:
+            results = await asyncio.gather(
+                juniper.send_to_watsonxai(prompts=mixtral_elser, model_id="MIXTRAL", type="elser",wml_credentials=wml_credentials),
+                #juniper.send_to_watsonxai(prompts=lama3_elser, model_id="LLAMA3", type="elser",wml_credentials=wml_credentials),
+                juniper.send_to_watsonxai(prompts=mixtral_dense, model_id="MIXTRAL", type="dense",wml_credentials=wml_credentials),
+                #juniper.send_to_watsonxai(prompts=lama3_dense, model_id="LLAMA3", type="dense",wml_credentials=wml_credentials),
+            )
+            return results
+
+    all_results = asyncio.run(fetch_all_results())
+    return all_results
 
 def get_custom_prompt(llm_instructions, wd_contexts, query_str):#
     context_str = "\n\n".join(wd_contexts)
@@ -262,7 +302,6 @@ def sort_and_delete_duplicates(obj_list, sort_key, unique_key):
             seen_keys.add(obj[unique_key])
             
     return unique_objects
-    
 
 if __name__ == '__main__':
     if 'uvicorn' not in sys.argv[0]:
