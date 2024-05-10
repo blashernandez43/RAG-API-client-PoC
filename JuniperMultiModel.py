@@ -7,6 +7,7 @@ from ibm_watson_machine_learning.metanames import GenTextParamsMetaNames as GenP
 from elasticsearch import Elasticsearch
 from sentence_transformers import SentenceTransformer
 from nltk.tokenize import word_tokenize
+from customTypes.queryLLMElserResponse import queryLLMElserResponse
 
 class JuniperMultiModel:
 
@@ -19,11 +20,15 @@ class JuniperMultiModel:
         tic = time.perf_counter()
         index_name = 'search-juniper-sparse-99k-50overlap'
         es_output_elser = self.es_query_process_parse_elser(
-            question, num_results=10, 
+            question, 
+            num_results=10, 
             index_name=index_name, 
             es_model_name=".elser_model_2_linux-x86_64",
             es_client=es_elser_client
         )
+
+        elser_metadata = sorted([{"title": item[0]["title"], "url": item[0]["url"], "score": item[1]} for item in es_output_elser], key=lambda x: x["score"], reverse=True)
+
 
         final_es_output_elser = self.process_es_output_elser(es_output_elser)
         cleaned_es_output_elser = self.clean_text(final_es_output_elser)
@@ -36,10 +41,12 @@ class JuniperMultiModel:
             index_name=index_name, 
             model=self._sentence_model,
             es_client=es_dense_client)
+        
+        dense_metadata = sorted([{"title": item[0]["title"], "url": item[0]["url"], "score": item[1]} for item in es_output_dense], key=lambda x: x["score"], reverse=True)
 
         final_es_output_dense = self.process_es_output_dense(es_output_dense)
         toc = time.perf_counter()
-        return cleaned_es_output_elser, final_es_output_dense
+        return cleaned_es_output_elser, final_es_output_dense, elser_metadata, dense_metadata
 
     def clean_text(self, text):
         # Remove newline characters along with other special characters and multiple spaces
@@ -263,8 +270,9 @@ class JuniperMultiModel:
                         min_new_tokens=30,
                         temperature=1.0,
                         repetition_penalty=1.0,
-                        wml_credentials={}
-                        ):
+                        wml_credentials={},
+                        metadata=[]
+                        ) -> queryLLMElserResponse:
         
 
         print(f"============== searchtype {type} model {model_id}")
@@ -294,9 +302,11 @@ class JuniperMultiModel:
         toc = time.perf_counter()
         duration = toc - tic
 
-        return {
-            "response": response,
+        res = {
+            "llm_response": response,
             "model_id": model_name,
             "query_type": type,
-            "model_load_time": duration
+            "error": "",
+            "references": metadata
         }
+        return queryLLMElserResponse(**res)

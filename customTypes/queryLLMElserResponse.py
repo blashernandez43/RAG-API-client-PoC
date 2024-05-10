@@ -9,4 +9,6 @@ class reference(BaseModel):
 class queryLLMElserResponse(BaseModel):
     llm_response: str
     references: List[reference]
+    model_id: str
+    query_type: str
     error: Optional[str] = ""

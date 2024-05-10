@@ -92,7 +92,7 @@ es_client_dense = Elasticsearch(
     verify_certs=True,
     request_timeout=10000
 )
-
+"""
 model_id = os.environ.get("LLM_MODEL_ID")
 decoding_method = os.environ.get("DECODING_METHOD")
 max_tokens = int(os.environ.get("MAX_TOKENS"))
@@ -108,7 +108,7 @@ params=llm_params.parameters.dict(),
 credentials=wml_credentials,
 project_id=project_id
 )
-
+"""
 # Basic security for accessing the App
 async def get_api_key(api_key_header: str = Security(api_key_header)):
     if api_key_header == os.environ.get("RAG_APP_API_KEY"):
@@ -122,7 +122,7 @@ async def get_api_key(api_key_header: str = Security(api_key_header)):
 def index(api_key: str = Security(get_api_key)):
     return {"Hello": "World"}
 
-
+"""
 @app.post("/queryWXDLLM")
 async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get_api_key))->queryLLMElserResponse:
     question         = request.question
@@ -244,13 +244,14 @@ async def queryWXDLLM(request: queryLLMElserRequest, api_key: str = Security(get
     }
     
     return queryLLMElserResponse(**res)
+"""
 
 ## end to end call retrieve document from elasticsearch and with the context make LLM call to watsonx.ai
-@app.post("/pipeline")
-def pipeline(request: queryLLMElserRequest, api_key: str = Security(get_api_key)):
+@app.post("/queryWXDLLM")
+def pipeline(request: queryLLMElserRequest, api_key: str = Security(get_api_key)) -> list[queryLLMElserResponse]:
     question         = request.question
     juniper = JuniperMultiModel()
-    elserContext, denseContext = juniper.retrieve_documents(
+    elserContext, denseContext, elser_metadata, dense_metadata = juniper.retrieve_documents(
         question=question,
         es_elser_client=es_client_elser, 
         es_dense_client=es_client_dense)
@@ -263,9 +264,9 @@ def pipeline(request: queryLLMElserRequest, api_key: str = Security(get_api_key)
     async def fetch_all_results():
         async with aiohttp.ClientSession() as session:
             results = await asyncio.gather(
-                juniper.send_to_watsonxai(prompts=mixtral_elser, model_id="MIXTRAL", type="elser",wml_credentials=wml_credentials),
+                juniper.send_to_watsonxai(prompts=mixtral_elser, model_id="MIXTRAL", type="elser",wml_credentials=wml_credentials, metadata=elser_metadata),
                 #juniper.send_to_watsonxai(prompts=lama3_elser, model_id="LLAMA3", type="elser",wml_credentials=wml_credentials),
-                juniper.send_to_watsonxai(prompts=mixtral_dense, model_id="MIXTRAL", type="dense",wml_credentials=wml_credentials),
+                juniper.send_to_watsonxai(prompts=mixtral_dense, model_id="MIXTRAL", type="dense",wml_credentials=wml_credentials, metadata=dense_metadata),
                 #juniper.send_to_watsonxai(prompts=lama3_dense, model_id="LLAMA3", type="dense",wml_credentials=wml_credentials),
             )
             return results
